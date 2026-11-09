@@ -15,6 +15,7 @@ h1{font-size:22px;font-weight:600;margin:0;text-wrap:balance}
 .stamp{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right}
 .hd-r{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
 .btn{font:inherit;font-weight:600;background:var(--accent);color:var(--bg);border:0;border-radius:6px;padding:8px 14px;cursor:pointer}
+a.btn{text-decoration:none;display:inline-block}
 .btn:disabled{opacity:.55;cursor:default}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
 .stat{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px 14px;display:flex;flex-direction:column;gap:2px;min-width:0}
@@ -60,7 +61,7 @@ svg text{fill:var(--muted);font-family:var(--mono);font-size:11px}
 <div class="wrap">
 <header>
  <div><h1>Rastreador RSI Quantfury</h1><div class="sub">Cripto, ações, ETFs, futuros e câmbio da Quantfury, com RSI(14) e RSI(2) diários</div></div>
- <div class="hd-r"><div class="stamp" id="stamp"></div><button id="refresh" class="btn" type="button" hidden>Atualizar dados</button><div class="stamp" id="rmsg" role="status"></div></div>
+ <div class="hd-r"><div class="stamp" id="stamp"></div><button id="refresh" class="btn" type="button" hidden>Atualizar dados</button><a id="gh" class="btn" href="https://github.com/omtavarestrader-rgb/rastreador-rsi-quantfury/actions/workflows/atualizar.yml" target="_blank" rel="noopener" title="Abre o GitHub. Clique em Run workflow." hidden>Atualizar agora</a><div class="stamp" id="rmsg" role="status"></div></div>
 </header>
 <section class="stats" id="stats"></section>
 <section class="panel"><h2>Onde cada ativo está na escala do RSI</h2><svg id="map" viewBox="0 0 960 120" role="img" aria-label="Distribuição do RSI dos ativos"></svg></section>
@@ -116,6 +117,7 @@ $("#grp").onchange=e=>{grp=e.target.value;LIM=100;rows()};
 $("#q").oninput=()=>{LIM=100;rows()};$("#wl").onchange=()=>{LIM=100;rows()};$("#lo2").oninput=all;$("#hi2").oninput=all;$("#more").onclick=()=>{LIM+=200;rows()};$("#lo").oninput=all;$("#hi").oninput=all;
 document.querySelectorAll("#seg button").forEach(b=>b.onclick=()=>{flt=b.dataset.f;LIM=100;document.querySelectorAll("#seg button").forEach(x=>x.setAttribute("aria-pressed",x==b));rows()});
 document.querySelectorAll("th[data-k]").forEach(th=>th.onclick=()=>{const k=th.dataset.k;sd=sk==k?-sd:1;sk=k;rows()});
+if(/\.github\.io$/.test(location.hostname))$("#gh").hidden=false;
 $("#stamp").textContent="Timeframe D1 · dados de "+GEN;
 (async()=>{try{const c=await claude.use("comments");if(!c)return;const b=$("#refresh");b.hidden=false;
  b.onclick=async()=>{b.disabled=true;$("#rmsg").textContent="Enviando pedido...";
