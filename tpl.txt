@@ -1,0 +1,130 @@
+<title>Rastreador RSI Quantfury</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: faixa de resumo, mapa de dispersão do RSI 0-100, tabela filtrável com sparkline */
+:root{--bg:#f3f5f7;--surface:#fff;--fg:#14202b;--muted:#5d6b78;--line:#dbe1e7;--ob:#c2362b;--ob-bg:#fbe9e7;--os:#0b7a5a;--os-bg:#e2f4ee;--accent:#1c4f82;--mid:#e9edf1;
+--sans:"IBM Plex Sans",system-ui,sans-serif;--mono:"IBM Plex Mono",ui-monospace,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1419;--surface:#151d24;--fg:#e4eaef;--muted:#8d9ba8;--line:#27323c;--ob:#ff7a6e;--ob-bg:#3a1f1d;--os:#4fd1a5;--os-bg:#14322a;--accent:#7fb2e8;--mid:#1d2832;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0e1419;--surface:#151d24;--fg:#e4eaef;--muted:#8d9ba8;--line:#27323c;--ob:#ff7a6e;--ob-bg:#3a1f1d;--os:#4fd1a5;--os-bg:#14322a;--accent:#7fb2e8;--mid:#1d2832;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.45}
+.wrap{max-width:1040px;margin:0 auto;padding-block:24px 40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:20px}
+header{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px 24px;align-items:end}
+h1{font-size:22px;font-weight:600;margin:0;text-wrap:balance}
+.sub{color:var(--muted);font-size:13px;margin-top:2px}
+.stamp{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right}
+.hd-r{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.btn{font:inherit;font-weight:600;background:var(--accent);color:var(--bg);border:0;border-radius:6px;padding:8px 14px;cursor:pointer}
+.btn:disabled{opacity:.55;cursor:default}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px 14px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.stat b{font-family:var(--mono);font-size:26px;font-weight:600;font-variant-numeric:tabular-nums}
+.stat span{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.stat.ob b{color:var(--ob)}.stat.os b{color:var(--os)}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:14px}
+.panel h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 10px;font-weight:600}
+#map{width:100%;height:auto;display:block}
+.controls{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center}
+.seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;background:none;color:var(--fg);font:inherit;padding:7px 12px;cursor:pointer;border-right:1px solid var(--line)}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--fg);color:var(--bg)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+input,select{font:inherit;background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:7px 10px}
+input[type=number]{width:64px;font-family:var(--mono)}
+input[type=search]{width:140px}
+label{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px}
+.tw{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:6px}
+table{border-collapse:collapse;width:100%;min-width:940px}
+th,td{padding:9px 12px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600;cursor:pointer;user-select:none;background:var(--surface);position:sticky;top:0}
+tr:last-child td{border-bottom:0}
+td.n{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.sym{font-weight:600}.grp{display:block;font-size:11px;color:var(--muted);font-weight:400}
+.rsi{display:inline-flex;align-items:center;gap:8px;justify-content:flex-end}
+.bar{width:70px;height:6px;background:var(--mid);border-radius:3px;position:relative}
+.bar i{position:absolute;top:-2px;width:3px;height:10px;border-radius:1px;background:var(--fg);transform:translateX(-1px)}
+.bar::before,.bar::after{content:"";position:absolute;top:0;bottom:0;width:1px;background:var(--muted);opacity:.6}
+.bar::before{left:var(--lo)}.bar::after{left:var(--hi)}
+.tag{font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;letter-spacing:.03em}
+.tag.ob{background:var(--ob-bg);color:var(--ob)}.tag.os{background:var(--os-bg);color:var(--os)}.tag.ne{color:var(--muted)}
+.up{color:var(--os)}.dn{color:var(--ob)}
+tr.ob td:first-child{box-shadow:inset 3px 0 var(--ob)}tr.os td:first-child{box-shadow:inset 3px 0 var(--os)}
+.r2.ob{color:var(--ob);font-weight:600}.r2.os{color:var(--os);font-weight:600}.more{margin:0 auto}.more.btn{background:var(--surface);color:var(--fg);border:1px solid var(--line)}
+.upd{color:var(--muted);font-size:12px}
+.note{color:var(--muted);font-size:12px;max-width:80ch}
+.empty{padding:28px;text-align:center;color:var(--muted)}
+svg text{fill:var(--muted);font-family:var(--mono);font-size:11px}
+</style>
+<div class="wrap">
+<header>
+ <div><h1>Rastreador RSI Quantfury</h1><div class="sub">Cripto, ações, ETFs, futuros e câmbio da Quantfury, com RSI(14) e RSI(2) diários</div></div>
+ <div class="hd-r"><div class="stamp" id="stamp"></div><button id="refresh" class="btn" type="button" hidden>Atualizar dados</button><div class="stamp" id="rmsg" role="status"></div></div>
+</header>
+<section class="stats" id="stats"></section>
+<section class="panel"><h2>Onde cada ativo está na escala do RSI</h2><svg id="map" viewBox="0 0 960 120" role="img" aria-label="Distribuição do RSI dos ativos"></svg></section>
+<section class="controls">
+ <div class="seg" id="seg"><button data-f="all" aria-pressed="true">Todos</button><button data-f="ob" aria-pressed="false">Sobrecompra</button><button data-f="os" aria-pressed="false">Sobrevenda</button><button data-f="r2" aria-pressed="false">RSI(2) extremo</button></div>
+ <label><input id="wl" type="checkbox"> Só watchlist</label>
+ <select id="grp" aria-label="Grupo"></select>
+ <input id="q" type="search" placeholder="Buscar ativo" aria-label="Buscar ativo">
+ <label>Sobrevenda ≤ <input id="lo" type="number" value="30" min="1" max="49"></label>
+ <label>Sobrecompra ≥ <input id="hi" type="number" value="70" min="51" max="99"></label>
+ <label>RSI(2) ≤ <input id="lo2" type="number" value="10" min="1" max="49"></label>
+ <label>RSI(2) ≥ <input id="hi2" type="number" value="90" min="51" max="99"></label>
+</section>
+<div class="tw"><table><thead><tr><th data-k="sym">Ativo</th><th data-k="price">Preço</th><th data-k="chg">Dia</th><th data-k="rsi">RSI (14)</th><th data-k="rsi2">RSI (2)</th><th data-k="prev">Ontem</th><th data-k="upd">Atualizado em</th><th>30 dias</th><th>Sinal</th></tr></thead><tbody id="tb"></tbody></table><div class="empty" id="empty" hidden>Nenhum ativo nessa condição.</div></div>
+<button id="more" class="btn more" type="button" hidden></button>
+<p class="note" id="foot"></p>
+</div>
+<script>
+const DATA=__DATA__, GEN=__GEN__;
+const $=s=>document.querySelector(s);
+let flt="all",grp="Todos os grupos",sk="rsi",sd=1;
+const ok=DATA.filter(d=>d.rsi!=null), bad=DATA.filter(d=>d.rsi==null);
+const lo=()=>+$("#lo").value||30, hi=()=>+$("#hi").value||70;
+const lo2=()=>+$("#lo2").value||10, hi2=()=>+$("#hi2").value||90;
+const sig2=d=>d.rsi2>=hi2()?"ob":d.rsi2<=lo2()?"os":"ne";
+let LIM=100;
+const sig=d=>d.rsi>=hi()?"ob":d.rsi<=lo()?"os":"ne";
+const fdt=s=>new Date(s*1000).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo",day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}).replace(",","");
+const fmt=(p,c)=>p>=1000?p.toLocaleString("pt-BR",{maximumFractionDigits:2}):p>=1?p.toLocaleString("pt-BR",{maximumFractionDigits:2}):p.toLocaleString("pt-BR",{maximumSignificantDigits:4});
+const cur={USDT:"",USD:"US$ ",BRL:"R$ ",EUR:"€ ",MXN:"MX$ "};
+function spark(a){const w=84,h=24,mn=Math.min(...a),mx=Math.max(...a),r=mx-mn||1;
+ const pts=a.map((v,i)=>[i*w/(a.length-1),h-2-(v-mn)/r*(h-4)]);
+ const up=a[a.length-1]>=a[0];
+ return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><polyline fill="none" stroke="${up?'var(--os)':'var(--ob)'}" stroke-width="1.5" points="${pts.map(p=>p.map(x=>x.toFixed(1)).join(',')).join(' ')}"/><circle cx="${pts.at(-1)[0]}" cy="${pts.at(-1)[1]}" r="2.2" fill="${up?'var(--os)':'var(--ob)'}"/></svg>`}
+function stats(){const ob=ok.filter(d=>sig(d)=="ob").length,os=ok.filter(d=>sig(d)=="os").length;
+ $("#stats").innerHTML=`<div class="stat ob"><b>${ob}</b><span>Sobrecompra</span></div><div class="stat os"><b>${os}</b><span>Sobrevenda</span></div><div class="stat"><b>${ok.length-ob-os}</b><span>Neutros</span></div><div class="stat"><b>${ok.filter(d=>sig2(d)=="ob").length} / ${ok.filter(d=>sig2(d)=="os").length}</b><span>RSI(2) alto / baixo</span></div><div class="stat"><b>${bad.length}</b><span>Sem dados</span></div>`}
+function map(){const W=960,x=v=>20+v/100*(W-40);let s=`<rect x="${x(0)}" y="30" width="${x(lo())-x(0)}" height="40" fill="var(--os-bg)"/><rect x="${x(hi())}" y="30" width="${x(100)-x(hi())}" height="40" fill="var(--ob-bg)"/><line x1="${x(0)}" x2="${x(100)}" y1="50" y2="50" stroke="var(--line)"/>`;
+ [0,lo(),50,hi(),100].forEach(v=>s+=`<text x="${x(v)}" y="104" text-anchor="middle">${v}</text><line x1="${x(v)}" x2="${x(v)}" y1="30" y2="74" stroke="var(--line)"/>`);
+ const sorted=[...ok].sort((a,b)=>a.rsi-b.rsi);let lastX=-99,row=0;
+ sorted.forEach((d,i)=>{const t=sig(d),c=t=="ob"?"var(--ob)":t=="os"?"var(--os)":"var(--muted)";
+  const cx=x(d.rsi);const cy=50+((i%9)-4)*4.5;
+  s+=`<circle cx="${cx}" cy="${cy}" r="${t=="ne"?2:3.6}" fill="${c}" opacity="${t=="ne"?.35:.9}"><title>${d.sym}: RSI ${d.rsi}</title></circle>`});
+ $("#map").innerHTML=s}
+function rows(){let r=ok.filter(d=>(flt=="all"||(flt=="r2"?sig2(d)!="ne":sig(d)==flt))&&(!$("#wl").checked||d.wl)&&(grp=="Todos os grupos"||d.group==grp)&&d.sym.toLowerCase().includes($("#q").value.toLowerCase()));
+ r.sort((a,b)=>{const A=a[sk],B=b[sk];return (typeof A=="string"?A.localeCompare(B):A-B)*sd});
+ $("#empty").hidden=r.length>0;const tot=r.length;r=r.slice(0,LIM);const mb=$("#more");mb.hidden=tot<=LIM;mb.textContent=`Mostrar mais (${LIM} de ${tot})`;
+ $("#tb").innerHTML=r.map(d=>{const t=sig(d),l=lo(),h=hi();
+  return `<tr class="${t}"><td class="sym">${d.sym}<span class="grp">${d.group}</span></td><td class="n">${cur[d.ccy]||""}${fmt(d.price)}</td><td class="n ${d.chg>=0?'up':'dn'}">${d.chg>=0?'+':''}${d.chg.toFixed(2)}%</td><td class="n"><span class="rsi"><span class="bar" style="--lo:${l}%;--hi:${h}%"><i style="left:${d.rsi}%"></i></span><b>${d.rsi.toFixed(1)}</b></span></td><td class="n"><span class="r2 ${sig2(d)}">${d.rsi2.toFixed(1)}</span></td><td class="n" style="color:var(--muted)">${d.prev.toFixed(1)}</td><td class="n upd">${fdt(d.upd||d.last)}</td><td>${spark(d.spark)}</td><td><span class="tag ${t}">${t=="ob"?"SOBRECOMPRA":t=="os"?"SOBREVENDA":"NEUTRO"}</span></td></tr>`}).join("")}
+function all(){stats();map();rows()}
+const groups=["Todos os grupos",...new Set(ok.map(d=>d.group))];
+$("#grp").innerHTML=groups.map(g=>`<option>${g}</option>`).join("");
+$("#grp").onchange=e=>{grp=e.target.value;LIM=100;rows()};
+$("#q").oninput=()=>{LIM=100;rows()};$("#wl").onchange=()=>{LIM=100;rows()};$("#lo2").oninput=all;$("#hi2").oninput=all;$("#more").onclick=()=>{LIM+=200;rows()};$("#lo").oninput=all;$("#hi").oninput=all;
+document.querySelectorAll("#seg button").forEach(b=>b.onclick=()=>{flt=b.dataset.f;LIM=100;document.querySelectorAll("#seg button").forEach(x=>x.setAttribute("aria-pressed",x==b));rows()});
+document.querySelectorAll("th[data-k]").forEach(th=>th.onclick=()=>{const k=th.dataset.k;sd=sk==k?-sd:1;sk=k;rows()});
+$("#stamp").textContent="Timeframe D1 · dados de "+GEN;
+(async()=>{try{const c=await claude.use("comments");if(!c)return;const b=$("#refresh");b.hidden=false;
+ b.onclick=async()=>{b.disabled=true;$("#rmsg").textContent="Enviando pedido...";
+  try{const st=await c.canSendToClaude();
+   if(st!=="available"){await c.openComposer({element:b});$("#rmsg").textContent="Escreva \"Atualizar dados\" e envie ao Claude.";b.disabled=false;return}
+   const an=await c.anchorFor(b);
+   await c.sendToClaude({anchor:an,text:"Atualizar os dados do rastreador RSI agora (RSI 14, candles diários) e republicar."});
+   $("#rmsg").textContent="Pedido enviado. A página recarrega quando os dados novos chegarem."}
+  catch(e){$("#rmsg").textContent="Não foi possível enviar ("+(e.code||"erro")+")";b.disabled=false}}}catch(e){}})();
+$("#foot").textContent="Candles diários (D1) do Yahoo Finance, RSI de Wilder. ‘Atualizado em’ é a última consulta do ativo, em horário de Brasília; ativos com pregão fechado param de ser consultados até o próximo pregão. RSI(14) usa 70/30; RSI(2) usa 90/10 (limites usuais para esse período, editáveis acima). O último candle pode ser de pregão em andamento. Preços vêm do Yahoo e podem diferir dos da Quantfury. Não entram as ações da Cboe Europe (exceto ENR) nem GRAM/USDT. Futuros e índices usam o contrato contínuo ou índice do Yahoo como referência. "+(bad.length?"Sem dados: "+bad.map(d=>d.sym).join(", ")+".":"");
+all();
+</script>

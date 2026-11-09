@@ -1,0 +1,32 @@
+name: Atualizar RSI
+on:
+  schedule:
+    - cron: "31 * * * *"
+  workflow_dispatch: {}
+permissions:
+  contents: write
+concurrency:
+  group: atualizar-rsi
+  cancel-in-progress: false
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Calcular RSI (apenas mercados abertos)
+        run: python3 -I rsi_all.py --auto
+      - name: Gerar página
+        run: |
+          python3 -I build.py
+          mv rastreador-rsi.html index.html
+      - name: Publicar
+        run: |
+          git config user.name "rsi-bot"
+          git config user.email "rsi-bot@users.noreply.github.com"
+          git add data_all.json index.html
+          git diff --cached --quiet || git commit -m "Atualiza dados"
+          git push
