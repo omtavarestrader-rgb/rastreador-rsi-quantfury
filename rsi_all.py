@@ -99,7 +99,7 @@ def divergence(cl,k=3,max_age=12,min_sep=5,max_sep=60,min_delta=1.0):
             if best is None or c[3]<best[3]: best=c
     return best
 def spark(batch,iv="1d"):
-    u="https://query1.finance.yahoo.com/v8/finance/spark?range="+("6mo" if iv=="1d" else "1mo")+"&interval="+iv+"&symbols="+urllib.parse.quote(",".join(batch),safe=",")
+    u="https://query1.finance.yahoo.com/v8/finance/spark?range="+("1y" if iv=="1d" else "1mo")+"&interval="+iv+"&symbols="+urllib.parse.quote(",".join(batch),safe=",")
     for k in range(5):
         try:
             return json.load(urllib.request.urlopen(urllib.request.Request(u,headers={"User-Agent":UA}),timeout=30))
@@ -137,7 +137,7 @@ def bars4h(v,r):
 meta={r[1]:r for r in R0}
 out={}
 prev={r["yahoo"]:r for r in json.load(open("data_all.json"))} if AUTO else {}
-syms=[r[1] for r in R0 if (not AUTO) or is_open(r) or ("div4" not in prev.get(r[1],{}))]; B=20
+syms=[r[1] for r in R0 if (not AUTO) or is_open(r) or ("sma200" not in prev.get(r[1],{}))]; B=20
 if AUTO: print("abertos agora:",len(syms),"de",len(R0))
 for i in range(0,len(syms),B):
     d=spark(syms[i:i+B]); d4=spark(syms[i:i+B],"60m")
@@ -154,6 +154,8 @@ for i in range(0,len(syms),B):
             except Exception: b4=[]
             out[s]["rsi4"]=round(rsi(b4),1) if len(b4)>=15 else None
             out[s]["rsi4_2"]=round(rsi(b4,2),1) if len(b4)>=3 else None
+            out[s]["sma200"]=round(sum(cs[-200:])/200,6) if len(cs)>=200 else None
+            out[s]["dist200"]=round((cs[-1]/out[s]["sma200"]-1)*100,2) if out[s]["sma200"] else None
             out[s]["div"]=divergence(cs)
             out[s]["div4"]=divergence(b4)
         except Exception as e: pass

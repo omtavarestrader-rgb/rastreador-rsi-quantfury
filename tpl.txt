@@ -37,7 +37,7 @@ input[type=number]{width:64px;font-family:var(--mono)}
 input[type=search]{width:140px}
 label{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px}
 .tw{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:6px}
-table{border-collapse:collapse;width:100%;min-width:1300px}
+table{border-collapse:collapse;width:100%;min-width:1380px}
 th,td{padding:9px 12px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
 th:first-child,td:first-child{text-align:left}
 th{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600;cursor:pointer;user-select:none;background:var(--surface);position:sticky;top:0}
@@ -56,6 +56,9 @@ tr.ob td:first-child{box-shadow:inset 3px 0 var(--ob)}tr.os td:first-child{box-s
 .r2.ob{color:var(--ob);font-weight:600}.r2.os{color:var(--os);font-weight:600}.more{margin:0 auto}.more.btn{background:var(--surface);color:var(--fg);border:1px solid var(--line)}
 .dv{display:inline-block;font-size:11px;font-weight:600;padding:2px 7px;border-radius:10px;margin:0 2px;cursor:help;white-space:nowrap}
 .dv.os{background:var(--os-bg);color:var(--os)}.dv.ob{background:var(--ob-bg);color:var(--ob)}
+.star{border:0;background:none;cursor:pointer;font-size:16px;line-height:1;padding:0 6px 0 0;color:var(--muted)}
+.star.on{color:#d99a00}.star.fixed{cursor:help;color:#d99a00}
+.ma.up{color:var(--os)}.ma.dn{color:var(--ob)}
 .upd{color:var(--muted);font-size:12px}
 .note{color:var(--muted);font-size:12px;max-width:80ch}
 .empty{padding:28px;text-align:center;color:var(--muted)}
@@ -70,7 +73,8 @@ svg text{fill:var(--muted);font-family:var(--mono);font-size:11px}
 <section class="panel"><h2>Onde cada ativo está na escala do RSI</h2><svg id="map" viewBox="0 0 960 120" role="img" aria-label="Distribuição do RSI dos ativos"></svg></section>
 <section class="controls">
  <div class="seg" id="seg"><button data-f="all" aria-pressed="true">Todos</button><button data-f="ob" aria-pressed="false">Sobrecompra</button><button data-f="os" aria-pressed="false">Sobrevenda</button><button data-f="r2" aria-pressed="false">RSI(2) extremo</button><button data-f="r4" aria-pressed="false">4H extremo</button><button data-f="dv" aria-pressed="false">Divergências</button></div>
- <label><input id="wl" type="checkbox"> Só watchlist</label>
+ <label><input id="wl" type="checkbox"> Só watchlist e ★</label>
+ <select id="trend" aria-label="Tendência"><option value="all">Qualquer tendência</option><option value="up">Acima da MM200</option><option value="dn">Abaixo da MM200</option></select>
  <select id="grp" aria-label="Grupo"></select>
  <input id="q" type="search" placeholder="Buscar ativo" aria-label="Buscar ativo">
  <label>Sobrevenda ≤ <input id="lo" type="number" value="30" min="1" max="49"></label>
@@ -78,7 +82,7 @@ svg text{fill:var(--muted);font-family:var(--mono);font-size:11px}
  <label>RSI(2) ≤ <input id="lo2" type="number" value="10" min="1" max="49"></label>
  <label>RSI(2) ≥ <input id="hi2" type="number" value="90" min="51" max="99"></label>
 </section>
-<div class="tw"><table><thead><tr><th data-k="sym">Ativo</th><th data-k="price">Preço</th><th data-k="chg">Dia</th><th data-k="rsi">RSI (14)</th><th data-k="rsi2">RSI (2)</th><th data-k="rsi4">RSI 4H (14)</th><th data-k="rsi4_2">RSI 4H (2)</th><th data-k="prev">Ontem</th><th data-k="divn">Divergência</th><th data-k="upd">Atualizado em</th><th>30 dias</th><th>Sinal</th></tr></thead><tbody id="tb"></tbody></table><div class="empty" id="empty" hidden>Nenhum ativo nessa condição.</div></div>
+<div class="tw"><table><thead><tr><th data-k="sym">Ativo</th><th data-k="price">Preço</th><th data-k="chg">Dia</th><th data-k="rsi">RSI (14)</th><th data-k="rsi2">RSI (2)</th><th data-k="rsi4">RSI 4H (14)</th><th data-k="rsi4_2">RSI 4H (2)</th><th data-k="prev">Ontem</th><th data-k="dist200">vs MM200</th><th data-k="divn">Divergência</th><th data-k="upd">Atualizado em</th><th>30 dias</th><th>Sinal</th></tr></thead><tbody id="tb"></tbody></table><div class="empty" id="empty" hidden>Nenhum ativo nessa condição.</div></div>
 <button id="more" class="btn more" type="button" hidden></button>
 <p class="note" id="foot"></p>
 </div>
@@ -86,6 +90,10 @@ svg text{fill:var(--muted);font-family:var(--mono);font-size:11px}
 const DATA=__DATA__, GEN=__GEN__;
 const $=s=>document.querySelector(s);
 let flt="all",grp="Todos os grupos",sk="rsi",sd=1;
+let mine=new Set();try{mine=new Set(JSON.parse(localStorage.getItem("rsi_watch")||"[]"))}catch(e){}
+const saveMine=()=>{try{localStorage.setItem("rsi_watch",JSON.stringify([...mine]))}catch(e){}};
+const inWl=d=>d.wl||mine.has(d.yahoo);
+const starBtn=d=>d.wl?`<span class="star fixed" title="Já está na sua watchlist da Quantfury">★</span>`:`<button class="star ${mine.has(d.yahoo)?"on":""}" data-y="${d.yahoo}" type="button" title="${mine.has(d.yahoo)?"Remover da minha lista":"Adicionar à minha lista"}" aria-label="Alternar na minha lista">${mine.has(d.yahoo)?"★":"☆"}</button>`;
 const ok=DATA.filter(d=>d.rsi!=null), bad=DATA.filter(d=>d.rsi==null);
 ok.forEach(d=>{d.dvs=[];[["D1",d.div],["4H",d.div4]].forEach(([tf,v])=>{if(v)d.dvs.push({tf,t:v[0],a:v[1],b:v[2],n:v[3]})});d.divn=d.dvs.length?Math.max(...d.dvs.map(x=>x.t=="alta"?2:1))+(d.dvs.length>1?.5:0):0});
 const dvTags=d=>d.dvs.map(x=>{const alta=x.t=="alta";return `<span class="dv ${alta?"os":"ob"}" title="Divergência de ${alta?"alta: preço fez fundo mais baixo e o RSI(14) fundo mais alto":"baixa: preço fez topo mais alto e o RSI(14) topo mais baixo"} (${String(x.a).replace(".",",")} → ${String(x.b).replace(".",",")}), confirmada há ${x.n} barra${x.n==1?"":"s"} de ${x.tf=="D1"?"1 dia":"4 horas"}">${x.tf} ${alta?"▲ alta":"▼ baixa"}</span>`}).join("");
@@ -94,7 +102,7 @@ const lo2=()=>+$("#lo2").value||10, hi2=()=>+$("#hi2").value||90;
 const sig4=d=>d.rsi4==null?"ne":d.rsi4>=hi()?"ob":d.rsi4<=lo()?"os":"ne";
 const sig42=d=>d.rsi4_2==null?"ne":d.rsi4_2>=hi2()?"ob":d.rsi4_2<=lo2()?"os":"ne";
 const sig2=d=>d.rsi2>=hi2()?"ob":d.rsi2<=lo2()?"os":"ne";
-let LIM=100;
+let LIM=100,tr="all";
 const sig=d=>d.rsi>=hi()?"ob":d.rsi<=lo()?"os":"ne";
 const fdt=s=>new Date(s*1000).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo",day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}).replace(",","");
 const fmt=(p,c)=>p>=1000?p.toLocaleString("pt-BR",{maximumFractionDigits:2}):p>=1?p.toLocaleString("pt-BR",{maximumFractionDigits:2}):p.toLocaleString("pt-BR",{maximumSignificantDigits:4});
@@ -112,16 +120,16 @@ function map(){const W=960,x=v=>20+v/100*(W-40);let s=`<rect x="${x(0)}" y="30" 
   const cx=x(d.rsi);const cy=50+((i%9)-4)*4.5;
   s+=`<circle cx="${cx}" cy="${cy}" r="${t=="ne"?2:3.6}" fill="${c}" opacity="${t=="ne"?.35:.9}"><title>${d.sym}: RSI ${d.rsi}</title></circle>`});
  $("#map").innerHTML=s}
-function rows(){let r=ok.filter(d=>(flt=="all"||(flt=="r2"?sig2(d)!="ne":flt=="r4"?(sig4(d)!="ne"||sig42(d)!="ne"):flt=="dv"?d.dvs.length>0:sig(d)==flt))&&(!$("#wl").checked||d.wl)&&(grp=="Todos os grupos"||d.group==grp)&&d.sym.toLowerCase().includes($("#q").value.toLowerCase()));
+function rows(){let r=ok.filter(d=>(flt=="all"||(flt=="r2"?sig2(d)!="ne":flt=="r4"?(sig4(d)!="ne"||sig42(d)!="ne"):flt=="dv"?d.dvs.length>0:sig(d)==flt))&&(!$("#wl").checked||inWl(d))&&(tr=="all"||(d.dist200!=null&&(tr=="up"?d.dist200>=0:d.dist200<0)))&&(grp=="Todos os grupos"||d.group==grp)&&d.sym.toLowerCase().includes($("#q").value.toLowerCase()));
  r.sort((a,b)=>{const A=a[sk]??-1,B=b[sk]??-1;return (typeof A=="string"?A.localeCompare(B):A-B)*sd});
  $("#empty").hidden=r.length>0;const tot=r.length;r=r.slice(0,LIM);const mb=$("#more");mb.hidden=tot<=LIM;mb.textContent=`Mostrar mais (${LIM} de ${tot})`;
  $("#tb").innerHTML=r.map(d=>{const t=sig(d),l=lo(),h=hi();
-  return `<tr class="${t}"><td class="sym">${d.sym}<span class="grp">${d.group}</span></td><td class="n">${cur[d.ccy]||""}${fmt(d.price)}</td><td class="n ${d.chg>=0?'up':'dn'}">${d.chg>=0?'+':''}${d.chg.toFixed(2)}%</td><td class="n"><span class="rsi"><span class="bar" style="--lo:${l}%;--hi:${h}%"><i style="left:${d.rsi}%"></i></span><b>${d.rsi.toFixed(1)}</b></span></td><td class="n"><span class="r2 ${sig2(d)}">${d.rsi2.toFixed(1)}</span></td><td class="n">${d.rsi4==null?"—":`<span class="r2 ${sig4(d)}">${d.rsi4.toFixed(1)}</span>`}</td><td class="n">${d.rsi4_2==null?"—":`<span class="r2 ${sig42(d)}">${d.rsi4_2.toFixed(1)}</span>`}</td><td class="n" style="color:var(--muted)">${d.prev.toFixed(1)}</td><td class="dvc">${dvTags(d)}</td><td class="n upd">${fdt(d.upd||d.last)}</td><td>${spark(d.spark)}</td><td><span class="tag ${t}">${t=="ob"?"SOBRECOMPRA":t=="os"?"SOBREVENDA":"NEUTRO"}</span></td></tr>`}).join("")}
+  return `<tr class="${t}"><td class="sym">${starBtn(d)}${d.sym}<span class="grp">${d.group}</span></td><td class="n">${cur[d.ccy]||""}${fmt(d.price)}</td><td class="n ${d.chg>=0?'up':'dn'}">${d.chg>=0?'+':''}${d.chg.toFixed(2)}%</td><td class="n"><span class="rsi"><span class="bar" style="--lo:${l}%;--hi:${h}%"><i style="left:${d.rsi}%"></i></span><b>${d.rsi.toFixed(1)}</b></span></td><td class="n"><span class="r2 ${sig2(d)}">${d.rsi2.toFixed(1)}</span></td><td class="n">${d.rsi4==null?"—":`<span class="r2 ${sig4(d)}">${d.rsi4.toFixed(1)}</span>`}</td><td class="n">${d.rsi4_2==null?"—":`<span class="r2 ${sig42(d)}">${d.rsi4_2.toFixed(1)}</span>`}</td><td class="n" style="color:var(--muted)">${d.prev.toFixed(1)}</td><td class="n">${d.dist200==null?"—":`<span class="ma ${d.dist200>=0?"up":"dn"}" title="Média de 200 dias: ${fmt(d.sma200)}">${d.dist200>=0?"+":""}${d.dist200.toFixed(1).replace(".",",")}%</span>`}</td><td class="dvc">${dvTags(d)}</td><td class="n upd">${fdt(d.upd||d.last)}</td><td>${spark(d.spark)}</td><td><span class="tag ${t}">${t=="ob"?"SOBRECOMPRA":t=="os"?"SOBREVENDA":"NEUTRO"}</span></td></tr>`}).join("")}
 function all(){stats();map();rows()}
 const groups=["Todos os grupos",...new Set(ok.map(d=>d.group))];
 $("#grp").innerHTML=groups.map(g=>`<option>${g}</option>`).join("");
 $("#grp").onchange=e=>{grp=e.target.value;LIM=100;rows()};
-$("#q").oninput=()=>{LIM=100;rows()};$("#wl").onchange=()=>{LIM=100;rows()};$("#lo2").oninput=all;$("#hi2").oninput=all;$("#more").onclick=()=>{LIM+=200;rows()};$("#lo").oninput=all;$("#hi").oninput=all;
+$("#q").oninput=()=>{LIM=100;rows()};$("#trend").onchange=e=>{tr=e.target.value;LIM=100;rows()};$("#tb").onclick=e=>{const b=e.target.closest("button.star");if(!b)return;const y=b.dataset.y;mine.has(y)?mine.delete(y):mine.add(y);saveMine();rows()};$("#wl").onchange=()=>{LIM=100;rows()};$("#lo2").oninput=all;$("#hi2").oninput=all;$("#more").onclick=()=>{LIM+=200;rows()};$("#lo").oninput=all;$("#hi").oninput=all;
 document.querySelectorAll("#seg button").forEach(b=>b.onclick=()=>{flt=b.dataset.f;LIM=100;document.querySelectorAll("#seg button").forEach(x=>x.setAttribute("aria-pressed",x==b));rows()});
 document.querySelectorAll("th[data-k]").forEach(th=>th.onclick=()=>{const k=th.dataset.k;sd=sk==k?-sd:1;sk=k;rows()});
 if(/\.github\.io$/.test(location.hostname))$("#gh").hidden=false;
@@ -134,6 +142,6 @@ $("#stamp").textContent="Timeframes D1 e 4H · dados de "+GEN;
    await c.sendToClaude({anchor:an,text:"Atualizar os dados do rastreador RSI agora (RSI 14, candles diários) e republicar."});
    $("#rmsg").textContent="Pedido enviado. A página recarrega quando os dados novos chegarem."}
   catch(e){$("#rmsg").textContent="Não foi possível enviar ("+(e.code||"erro")+")";b.disabled=false}}}catch(e){}})();
-$("#foot").textContent="Candles diários (D1) do Yahoo Finance, RSI de Wilder. ‘Atualizado em’ é a última consulta do ativo, em horário de Brasília; ativos com pregão fechado param de ser consultados até o próximo pregão. RSI(14) usa 70/30; RSI(2) usa 90/10 (limites usuais para esse período, editáveis acima). RSI 4H: barras de 4 horas montadas a partir de candles de 1 hora (cripto, futuros e câmbio em blocos fixos de 4h em UTC; ações e demais a partir da abertura do pregão), com Wilder de 14 e 2 períodos e os mesmos limites; a barra mais recente pode estar em formação. Divergência: comparação dos dois últimos pivôs dos fechamentos (3 barras de cada lado, 5 a 60 barras de distância, o mais recente com até 12 barras) com o RSI(14) nos mesmos pontos; só divergências regulares, de alta (RSI do primeiro fundo abaixo de 45) e de baixa (RSI do primeiro topo acima de 55). Usa fechamentos, não máximas e mínimas, então pode diferir do que se vê no gráfico; é um alerta para olhar o ativo, não um sinal de operação. O último candle diário pode ser de pregão em andamento. Preços vêm do Yahoo e podem diferir dos da Quantfury. Não entram as ações da Cboe Europe (exceto ENR) nem GRAM/USDT. Futuros e índices usam o contrato contínuo ou índice do Yahoo como referência. "+(bad.length?"Sem dados: "+bad.map(d=>d.sym).join(", ")+".":"");
+$("#foot").textContent="Candles diários (D1) do Yahoo Finance, RSI de Wilder. ‘Atualizado em’ é a última consulta do ativo, em horário de Brasília; ativos com pregão fechado param de ser consultados até o próximo pregão. RSI(14) usa 70/30; RSI(2) usa 90/10 (limites usuais para esse período, editáveis acima). RSI 4H: barras de 4 horas montadas a partir de candles de 1 hora (cripto, futuros e câmbio em blocos fixos de 4h em UTC; ações e demais a partir da abertura do pregão), com Wilder de 14 e 2 períodos e os mesmos limites; a barra mais recente pode estar em formação. vs MM200: distância do preço à média simples dos últimos 200 fechamentos diários (vazio quando o ativo tem menos de 200 dias de histórico). As estrelas (☆) montam uma lista sua, salva só neste navegador; elas não alteram a watchlist da Quantfury, e as ★ fixas são as que já estão nela. Divergência: comparação dos dois últimos pivôs dos fechamentos (3 barras de cada lado, 5 a 60 barras de distância, o mais recente com até 12 barras) com o RSI(14) nos mesmos pontos; só divergências regulares, de alta (RSI do primeiro fundo abaixo de 45) e de baixa (RSI do primeiro topo acima de 55). Usa fechamentos, não máximas e mínimas, então pode diferir do que se vê no gráfico; é um alerta para olhar o ativo, não um sinal de operação. O último candle diário pode ser de pregão em andamento. Preços vêm do Yahoo e podem diferir dos da Quantfury. Não entram as ações da Cboe Europe (exceto ENR) nem GRAM/USDT. Futuros e índices usam o contrato contínuo ou índice do Yahoo como referência. "+(bad.length?"Sem dados: "+bad.map(d=>d.sym).join(", ")+".":"");
 all();
 </script>
