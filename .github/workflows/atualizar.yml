@@ -28,5 +28,10 @@ jobs:
           git config user.name "rsi-bot"
           git config user.email "rsi-bot@users.noreply.github.com"
           git add data_all.json index.html
-          git diff --cached --quiet || git commit -m "Atualiza dados"
-          git push
+          git diff --cached --quiet && exit 0
+          git commit -m "Atualiza dados"
+          for i in 1 2 3; do
+            git push && exit 0
+            git pull --rebase -X theirs origin main || git rebase --abort
+          done
+          exit 1
