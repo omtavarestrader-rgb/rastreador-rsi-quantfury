@@ -58,6 +58,46 @@ def rsi(cl,n=14):
     for i in range(n+1,len(cl)):
         d=cl[i]-cl[i-1]; g=(g*(n-1)+max(d,0))/n; l=(l*(n-1)+max(-d,0))/n
     return 100.0 if l==0 else 100-100/(1+g/l)
+
+def rsi_series(cl,n=14):
+    """RSI de Wilder para cada ponto (None antes de haver n variações)."""
+    out=[None]*len(cl)
+    if len(cl)<n+1: return out
+    g=l=0
+    for i in range(1,n+1):
+        d=cl[i]-cl[i-1]; g+=max(d,0); l+=max(-d,0)
+    g/=n;l/=n
+    out[n]=100.0 if l==0 else 100-100/(1+g/l)
+    for i in range(n+1,len(cl)):
+        d=cl[i]-cl[i-1]; g=(g*(n-1)+max(d,0))/n; l=(l*(n-1)+max(-d,0))/n
+        out[i]=100.0 if l==0 else 100-100/(1+g/l)
+    return out
+def divergence(cl,k=3,max_age=12,min_sep=5,max_sep=60,min_delta=1.0):
+    """Divergência regular do RSI(14) sobre fechamentos.
+    Alta: preço faz fundo mais baixo e o RSI fundo mais alto (RSI do 1o fundo < 45).
+    Baixa: preço faz topo mais alto e o RSI topo mais baixo (RSI do 1o topo > 55).
+    Pivôs com k barras de cada lado; o 2o pivô precisa ter no máximo max_age barras.
+    Retorna [tipo, rsi_1o_pivo, rsi_2o_pivo, barras_desde_o_2o_pivo] ou None."""
+    n=len(cl)
+    if n<30: return None
+    rs=rsi_series(cl)
+    lows=[];highs=[]
+    for i in range(k,n-k):
+        w=cl[i-k:i+k+1]
+        if rs[i] is None: continue
+        if cl[i]==min(w) and cl[i]<min(cl[i-k:i]+cl[i+1:i+k+1]): lows.append(i)
+        if cl[i]==max(w) and cl[i]>max(cl[i-k:i]+cl[i+1:i+k+1]): highs.append(i)
+    best=None
+    if len(lows)>=2:
+        a,b=lows[-2],lows[-1]
+        if n-1-b<=max_age and min_sep<=b-a<=max_sep and cl[b]<cl[a] and rs[b]>rs[a]+min_delta and rs[a]<45:
+            best=["alta",round(rs[a],1),round(rs[b],1),n-1-b]
+    if len(highs)>=2:
+        a,b=highs[-2],highs[-1]
+        if n-1-b<=max_age and min_sep<=b-a<=max_sep and cl[b]>cl[a] and rs[b]<rs[a]-min_delta and rs[a]>55:
+            c=["baixa",round(rs[a],1),round(rs[b],1),n-1-b]
+            if best is None or c[3]<best[3]: best=c
+    return best
 def spark(batch,iv="1d"):
     u="https://query1.finance.yahoo.com/v8/finance/spark?range="+("6mo" if iv=="1d" else "1mo")+"&interval="+iv+"&symbols="+urllib.parse.quote(",".join(batch),safe=",")
     for k in range(5):
@@ -97,7 +137,7 @@ def bars4h(v,r):
 meta={r[1]:r for r in R0}
 out={}
 prev={r["yahoo"]:r for r in json.load(open("data_all.json"))} if AUTO else {}
-syms=[r[1] for r in R0 if (not AUTO) or is_open(r)]; B=20
+syms=[r[1] for r in R0 if (not AUTO) or is_open(r) or ("div4" not in prev.get(r[1],{}))]; B=20
 if AUTO: print("abertos agora:",len(syms),"de",len(R0))
 for i in range(0,len(syms),B):
     d=spark(syms[i:i+B]); d4=spark(syms[i:i+B],"60m")
@@ -114,12 +154,14 @@ for i in range(0,len(syms),B):
             except Exception: b4=[]
             out[s]["rsi4"]=round(rsi(b4),1) if len(b4)>=15 else None
             out[s]["rsi4_2"]=round(rsi(b4,2),1) if len(b4)>=3 else None
+            out[s]["div"]=divergence(cs)
+            out[s]["div4"]=divergence(b4)
         except Exception as e: pass
     time.sleep(1.5)
     if (i//B)%10==0: print(i,len(out),flush=True)
 res=[]
 for r in R0:
-    res.append(out.get(r[1]) or ((prev.get(r[1]) if r[1] not in syms else None)) or dict(sym=r[0],yahoo=r[1],group=r[2],ccy=r[3],wl=r[0] in WL,rsi=None,rsi2=None))
+    res.append(out.get(r[1]) or prev.get(r[1]) or dict(sym=r[0],yahoo=r[1],group=r[2],ccy=r[3],wl=r[0] in WL,rsi=None,rsi2=None))
 json.dump(res,open("data_all.json","w"))
 ok=[r for r in res if r["rsi"] is not None]
 print(len(res),"ativos;",len(ok),"com RSI;",len(res)-len(ok),"sem dados")
