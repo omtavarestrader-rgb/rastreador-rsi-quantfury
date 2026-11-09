@@ -5,13 +5,14 @@ on:
   workflow_dispatch: {}
 permissions:
   contents: write
+  actions: write
 concurrency:
   group: atualizar-rsi
   cancel-in-progress: false
 jobs:
   atualizar:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -35,3 +36,15 @@ jobs:
             git pull --rebase -X theirs origin main || git rebase --abort
           done
           exit 1
+      - name: Reagendar em 30 minutos
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          sleep 1500
+          fila=$(gh run list --workflow atualizar.yml --status queued --json databaseId --jq length)
+          andamento=$(gh run list --workflow atualizar.yml --status in_progress --json databaseId --jq length)
+          if [ "$fila" -eq 0 ] && [ "$andamento" -le 1 ]; then
+            gh workflow run atualizar.yml --ref main
+          fi

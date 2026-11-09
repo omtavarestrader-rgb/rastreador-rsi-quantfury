@@ -58,8 +58,8 @@ def rsi(cl,n=14):
     for i in range(n+1,len(cl)):
         d=cl[i]-cl[i-1]; g=(g*(n-1)+max(d,0))/n; l=(l*(n-1)+max(-d,0))/n
     return 100.0 if l==0 else 100-100/(1+g/l)
-def spark(batch):
-    u="https://query1.finance.yahoo.com/v8/finance/spark?range=6mo&interval=1d&symbols="+urllib.parse.quote(",".join(batch),safe=",")
+def spark(batch,iv="1d"):
+    u="https://query1.finance.yahoo.com/v8/finance/spark?range="+("6mo" if iv=="1d" else "1mo")+"&interval="+iv+"&symbols="+urllib.parse.quote(",".join(batch),safe=",")
     for k in range(5):
         try:
             return json.load(urllib.request.urlopen(urllib.request.Request(u,headers={"User-Agent":UA}),timeout=30))
@@ -68,13 +68,39 @@ def spark(batch):
             if "404" in str(e) or "400" in str(e): return {}
             time.sleep(2)
     return {}
+
+def tz_of(y):
+    if y.endswith(".SA") or y=="^BVSP": return "America/Sao_Paulo"
+    if y.endswith(".MX"): return "America/Mexico_City"
+    if y.endswith(".DE") or y=="^GDAXI" or y=="^FCHI": return "Europe/Berlin"
+    return "America/New_York"
+def bars4h(v,r):
+    """Fecha de barras de 4H montadas com candles de 1H. Cripto, futuros e câmbio: blocos fixos de 4h em UTC.
+    Demais ativos: blocos de 4 candles a partir da abertura de cada pregão. A última barra pode estar em formação."""
+    ts=v["timestamp"]; cl=v.get("close") or v["indicators"]["quote"][0]["close"]
+    p=[(t,c) for t,c in zip(ts,cl) if c is not None]
+    dis,y,g,c=r
+    if g=="Cripto" or y.endswith("=F") or y.endswith("=X") or y=="DX-Y.NYB":
+        out=[];key=None
+        for t,c in p:
+            k=t//14400
+            if k!=key: out.append(c); key=k
+            else: out[-1]=c
+        return out
+    z=zoneinfo.ZoneInfo(tz_of(y)); days={}
+    for t,c in p: days.setdefault(datetime.datetime.fromtimestamp(t,z).date(),[]).append(c)
+    out=[]
+    for d in sorted(days):
+        cs=days[d]
+        for i in range(0,len(cs),4): out.append(cs[i:i+4][-1])
+    return out
 meta={r[1]:r for r in R0}
 out={}
 prev={r["yahoo"]:r for r in json.load(open("data_all.json"))} if AUTO else {}
 syms=[r[1] for r in R0 if (not AUTO) or is_open(r)]; B=20
 if AUTO: print("abertos agora:",len(syms),"de",len(R0))
 for i in range(0,len(syms),B):
-    d=spark(syms[i:i+B])
+    d=spark(syms[i:i+B]); d4=spark(syms[i:i+B],"60m")
     for s,v in d.items():
         try:
             ts=v["timestamp"]; cl=v.get("close") or v["indicators"]["quote"][0]["close"]
@@ -83,8 +109,13 @@ for i in range(0,len(syms),B):
             if x is None or len(cs)<16: continue
             dis,y,g,c=meta[s]
             out[s]=dict(sym=dis,yahoo=s,group=g,ccy=c,wl=dis in WL,price=cs[-1],chg=(cs[-1]/cs[-2]-1)*100,rsi=round(x,1),prev=round(rsi(cs[:-1]),1),rsi2=round(rsi(cs,2),1),rsi2p=round(rsi(cs[:-1],2),1),last=p[-1][0],upd=int(time.time()),spark=[float('%.5g'%q) for q in cs[-30:]])
+            try:
+                b4=bars4h(d4[s],meta[s]) if s in d4 else []
+            except Exception: b4=[]
+            out[s]["rsi4"]=round(rsi(b4),1) if len(b4)>=15 else None
+            out[s]["rsi4_2"]=round(rsi(b4,2),1) if len(b4)>=3 else None
         except Exception as e: pass
-    time.sleep(0.8)
+    time.sleep(1.5)
     if (i//B)%10==0: print(i,len(out),flush=True)
 res=[]
 for r in R0:
