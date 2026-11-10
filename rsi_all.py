@@ -72,15 +72,19 @@ def rsi_series(cl,n=14):
         d=cl[i]-cl[i-1]; g=(g*(n-1)+max(d,0))/n; l=(l*(n-1)+max(-d,0))/n
         out[i]=100.0 if l==0 else 100-100/(1+g/l)
     return out
-def divergence(cl,k=3,max_age=12,min_sep=5,max_sep=60,min_delta=1.0):
+def divergence(cl,k=3,max_age=8,min_sep=5,max_sep=60,min_delta=3.0,zone=40,min_sd=0.75):
     """Divergência regular do RSI(14) sobre fechamentos.
-    Alta: preço faz fundo mais baixo e o RSI fundo mais alto (RSI do 1o fundo < 45).
-    Baixa: preço faz topo mais alto e o RSI topo mais baixo (RSI do 1o topo > 55).
-    Pivôs com k barras de cada lado; o 2o pivô precisa ter no máximo max_age barras.
+    Alta: preço faz fundo mais baixo e o RSI fundo mais alto (RSI do 1o fundo <= zone).
+    Baixa: preço faz topo mais alto e o RSI topo mais baixo (RSI do 1o topo >= 100-zone).
+    Pivôs com k barras de cada lado; o 2o pivô precisa ter no máximo max_age barras; o preço precisa
+    ter se deslocado ao menos min_sd desvios-padrão de um retorno por barra entre os dois pivôs.
     Retorna [tipo, rsi_1o_pivo, rsi_2o_pivo, barras_desde_o_2o_pivo] ou None."""
     n=len(cl)
     if n<30: return None
     rs=rsi_series(cl)
+    rets=[cl[i]/cl[i-1]-1 for i in range(1,n) if cl[i-1]]
+    mu=sum(rets)/len(rets); sd=(sum((x-mu)**2 for x in rets)/len(rets))**.5
+    mv=min_sd*sd
     lows=[];highs=[]
     for i in range(k,n-k):
         w=cl[i-k:i+k+1]
@@ -90,11 +94,11 @@ def divergence(cl,k=3,max_age=12,min_sep=5,max_sep=60,min_delta=1.0):
     best=None
     if len(lows)>=2:
         a,b=lows[-2],lows[-1]
-        if n-1-b<=max_age and min_sep<=b-a<=max_sep and cl[b]<cl[a] and rs[b]>rs[a]+min_delta and rs[a]<45:
+        if n-1-b<=max_age and min_sep<=b-a<=max_sep and cl[b]<cl[a]*(1-mv) and rs[b]>rs[a]+min_delta and rs[a]<=zone:
             best=["alta",round(rs[a],1),round(rs[b],1),n-1-b]
     if len(highs)>=2:
         a,b=highs[-2],highs[-1]
-        if n-1-b<=max_age and min_sep<=b-a<=max_sep and cl[b]>cl[a] and rs[b]<rs[a]-min_delta and rs[a]>55:
+        if n-1-b<=max_age and min_sep<=b-a<=max_sep and cl[b]>cl[a]*(1+mv) and rs[b]<rs[a]-min_delta and rs[a]>=100-zone:
             c=["baixa",round(rs[a],1),round(rs[b],1),n-1-b]
             if best is None or c[3]<best[3]: best=c
     return best
@@ -137,7 +141,7 @@ def bars4h(v,r):
 meta={r[1]:r for r in R0}
 out={}
 prev={r["yahoo"]:r for r in json.load(open("data_all.json"))} if AUTO else {}
-syms=[r[1] for r in R0 if (not AUTO) or is_open(r) or ("sma200" not in prev.get(r[1],{}))]; B=20
+syms=[r[1] for r in R0 if (not AUTO) or is_open(r) or (prev.get(r[1],{}).get("dvv")!=2)]; B=20
 if AUTO: print("abertos agora:",len(syms),"de",len(R0))
 for i in range(0,len(syms),B):
     d=spark(syms[i:i+B]); d4=spark(syms[i:i+B],"60m")
@@ -156,6 +160,7 @@ for i in range(0,len(syms),B):
             out[s]["rsi4_2"]=round(rsi(b4,2),1) if len(b4)>=3 else None
             out[s]["sma200"]=round(sum(cs[-200:])/200,6) if len(cs)>=200 else None
             out[s]["dist200"]=round((cs[-1]/out[s]["sma200"]-1)*100,2) if out[s]["sma200"] else None
+            out[s]["dvv"]=2
             out[s]["div"]=divergence(cs)
             out[s]["div4"]=divergence(b4)
         except Exception as e: pass
