@@ -103,7 +103,7 @@ def divergence(cl,k=3,max_age=8,min_sep=5,max_sep=60,min_delta=3.0,zone=40,min_s
             if best is None or c[3]<best[3]: best=c
     return best
 def spark(batch,iv="1d"):
-    u="https://query1.finance.yahoo.com/v8/finance/spark?range="+("1y" if iv=="1d" else "1mo")+"&interval="+iv+"&symbols="+urllib.parse.quote(",".join(batch),safe=",")
+    u="https://query1.finance.yahoo.com/v8/finance/spark?range="+({"1d":"1y","60m":"1mo","1wk":"2y"}[iv])+"&interval="+iv+"&symbols="+urllib.parse.quote(",".join(batch),safe=",")
     for k in range(5):
         try:
             return json.load(urllib.request.urlopen(urllib.request.Request(u,headers={"User-Agent":UA}),timeout=30))
@@ -141,10 +141,10 @@ def bars4h(v,r):
 meta={r[1]:r for r in R0}
 out={}
 prev={r["yahoo"]:r for r in json.load(open("data_all.json"))} if AUTO else {}
-syms=[r[1] for r in R0 if (not AUTO) or is_open(r) or (prev.get(r[1],{}).get("dvv")!=2)]; B=20
+syms=[r[1] for r in R0 if (not AUTO) or is_open(r) or ("rsiw" not in prev.get(r[1],{}))]; B=20
 if AUTO: print("abertos agora:",len(syms),"de",len(R0))
 for i in range(0,len(syms),B):
-    d=spark(syms[i:i+B]); d4=spark(syms[i:i+B],"60m")
+    d=spark(syms[i:i+B]); d4=spark(syms[i:i+B],"60m"); dw=spark(syms[i:i+B],"1wk")
     for s,v in d.items():
         try:
             ts=v["timestamp"]; cl=v.get("close") or v["indicators"]["quote"][0]["close"]
@@ -161,6 +161,11 @@ for i in range(0,len(syms),B):
             out[s]["sma200"]=round(sum(cs[-200:])/200,6) if len(cs)>=200 else None
             out[s]["dist200"]=round((cs[-1]/out[s]["sma200"]-1)*100,2) if out[s]["sma200"] else None
             out[s]["dvv"]=2
+            if s in dw:
+                try:
+                    wv=dw[s]; wc=wv.get("close") or wv["indicators"]["quote"][0]["close"]; wc=[c for c in wc if c is not None]
+                    out[s]["rsiw"]=round(rsi(wc),1) if len(wc)>=15 else None
+                except Exception: pass
             out[s]["div"]=divergence(cs)
             out[s]["div4"]=divergence(b4)
         except Exception as e: pass
