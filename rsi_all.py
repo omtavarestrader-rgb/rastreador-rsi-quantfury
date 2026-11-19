@@ -138,10 +138,52 @@ def bars4h(v,r):
         cs=days[d]
         for i in range(0,len(cs),4): out.append(cs[i:i+4][-1])
     return out
+
+def stoch(c,H=None,L=None,n=14,k=3,d=3):
+    """Estocástico lento (14,3,3) com máximas e mínimas reais: retorna [%K lento, %D] ou None."""
+    H=H or c; L=L or c
+    if len(c)<n+k+d-2: return None
+    fast=[]
+    for i in range(n-1,len(c)):
+        hh=max(H[i-n+1:i+1]); ll=min(L[i-n+1:i+1])
+        fast.append(100*(c[i]-ll)/(hh-ll) if hh>ll else 50.0)
+    sk=[sum(fast[j-k+1:j+1])/k for j in range(k-1,len(fast))]
+    sd=[sum(sk[j-d+1:j+1])/d for j in range(d-1,len(sk))]
+    return [round(sk[-1],1),round(sd[-1],1)]
+def chart60(sym):
+    u="https://query1.finance.yahoo.com/v8/finance/chart/"+urllib.parse.quote(sym,safe="")+"?range=1mo&interval=60m"
+    for k in range(4):
+        try:
+            return json.load(urllib.request.urlopen(urllib.request.Request(u,headers={"User-Agent":UA}),timeout=30))["chart"]["result"][0]
+        except Exception as e:
+            if "429" in str(e): time.sleep(8*(k+1)); continue
+            if "404" in str(e): return None
+            time.sleep(2)
+    return None
+def ohlc_bars(res,r,h):
+    """Barras de h horas (2 ou 4) com máxima, mínima e fechamento, montadas de candles de 1H.
+    Cripto, futuros e câmbio: blocos fixos em UTC; demais: blocos de h candles a partir da abertura de cada pregão."""
+    ts=res["timestamp"]; q=res["indicators"]["quote"][0]
+    rows=[(t,hi,lo,c) for t,hi,lo,c in zip(ts,q["high"],q["low"],q["close"]) if c is not None and hi is not None and lo is not None]
+    dis,y,g,c=r; groups=[]
+    if g=="Cripto" or y.endswith("=F") or y.endswith("=X") or y=="DX-Y.NYB":
+        key=None
+        for t,hi,lo,cl in rows:
+            kk=t//(3600*h)
+            if kk!=key: groups.append([hi,lo,cl]); key=kk
+            else: groups[-1][0]=max(groups[-1][0],hi); groups[-1][1]=min(groups[-1][1],lo); groups[-1][2]=cl
+    else:
+        z=zoneinfo.ZoneInfo(tz_of(y)); days={}
+        for t,hi,lo,cl in rows: days.setdefault(datetime.datetime.fromtimestamp(t,z).date(),[]).append((hi,lo,cl))
+        for dd in sorted(days):
+            cs=days[dd]
+            for i in range(0,len(cs),h):
+                ch=cs[i:i+h]; groups.append([max(x[0] for x in ch),min(x[1] for x in ch),ch[-1][2]])
+    return [g[0] for g in groups],[g[1] for g in groups],[g[2] for g in groups]
 meta={r[1]:r for r in R0}
 out={}
 prev={r["yahoo"]:r for r in json.load(open("data_all.json"))} if AUTO else {}
-syms=[r[1] for r in R0 if (not AUTO) or is_open(r) or ("rsiw" not in prev.get(r[1],{}))]; B=20
+syms=[r[1] for r in R0 if (not AUTO) or is_open(r) or ("rsiw" not in prev.get(r[1],{}) or "st4" not in prev.get(r[1],{}))]; B=20
 if AUTO: print("abertos agora:",len(syms),"de",len(R0))
 for i in range(0,len(syms),B):
     d=spark(syms[i:i+B]); d4=spark(syms[i:i+B],"60m"); dw=spark(syms[i:i+B],"1wk")
@@ -171,6 +213,24 @@ for i in range(0,len(syms),B):
         except Exception as e: pass
     time.sleep(1.5)
     if (i//B)%10==0: print(i,len(out),flush=True)
+
+# Estocástico lento 2H e 4H (máximas e mínimas reais): uma consulta por ativo, só para os de maior interesse
+PRIO=lambda r: r[2] in ("Cripto","Futuros","Futuros e outros","Câmbio","ETFs") or r[0] in WL
+ns=0
+for s,row in out.items():
+    r=meta[s]
+    if not PRIO(r): row["st2"]=None; row["st4"]=None; continue
+    p=prev.get(s,{})
+    if "st4" in p: row["st2"]=p.get("st2"); row["st4"]=p.get("st4")
+    ch=chart60(s)
+    if ch:
+        try:
+            for key,h in (("st2",2),("st4",4)):
+                H,L,C=ohlc_bars(ch,r,h); row[key]=stoch(C,H,L)
+            ns+=1
+        except Exception: pass
+    time.sleep(0.6)
+print("estocástico OHLC calculado para",ns,"ativos")
 res=[]
 for r in R0:
     res.append(out.get(r[1]) or prev.get(r[1]) or dict(sym=r[0],yahoo=r[1],group=r[2],ccy=r[3],wl=r[0] in WL,rsi=None,rsi2=None))
