@@ -2,6 +2,7 @@ import json,sys,time,urllib.request,urllib.parse
 ns={}; exec(open("tickers.py").read(),ns)
 UA="quantfury-rsi-tracker/1.0"
 WL=set("BTC/USDT ETH/USDT XRP/USDT AAVE/USDT SOL/USDT LTC/USDT LINK/USDT AVAX/USDT INJ/USDT UNI/USDT NEAR/USDT DOT/USDT SUI/USDT FIL/USDT ONDO/USDT ADA/USDT XLM/USDT HBAR/USDT DOGE/USDT SAND/USDT NQZ6 DXZ6 SMTO3 WEGE3 USIM5 SLCE3 TTWO IONQ QBTS QS BBAI META GOOGL AMZN AAPL IBIT NVDA PINFRA SPY ENR TLN MSFT MSTR PETR4 VBBR3 TAEE11 SAPR11 SANB11 KLBN11 JBS ITUB4 ITSA4 EMBJ3 BPAC11 BBDC4 BBAS3 AGRO3 VIVT3".split())
+PIN={"HYPE/USDT"}  # sempre visíveis na página, mesmo sem sobrecompra/sobrevenda
 rows=[]  # display,yahoo,group,ccy
 crypto="AAVE ADA APT ARB ATOM AVAX BCH BTC DOGE DOT ETC ETH FIL FTM HBAR HYPE INJ LINK LTC MANA POL NEAR NEO ONDO OP RUNE SAND SUI SOL TAO THETA UNI VIRTUAL XLM XRP ZEC".split()
 CM={"UNI":"UNI7083-USD","SUI":"SUI20947-USD","APT":"APT21794-USD","POL":"POL28321-USD","TAO":"TAO22974-USD","HYPE":"HYPE32196-USD","VIRTUAL":"VIRTUAL-USD"}
@@ -194,7 +195,7 @@ for i in range(0,len(syms),B):
             cs=[c for _,c in p]; x=rsi(cs)
             if x is None or len(cs)<16: continue
             dis,y,g,c=meta[s]
-            out[s]=dict(sym=dis,yahoo=s,group=g,ccy=c,wl=dis in WL,price=cs[-1],chg=(cs[-1]/cs[-2]-1)*100,rsi=round(x,1),prev=round(rsi(cs[:-1]),1),rsi2=round(rsi(cs,2),1),rsi2p=round(rsi(cs[:-1],2),1),last=p[-1][0],upd=int(time.time()),spark=[float('%.5g'%q) for q in cs[-30:]])
+            out[s]=dict(sym=dis,yahoo=s,group=g,ccy=c,wl=dis in WL,pin=dis in PIN,price=cs[-1],chg=(cs[-1]/cs[-2]-1)*100,rsi=round(x,1),prev=round(rsi(cs[:-1]),1),rsi2=round(rsi(cs,2),1),rsi2p=round(rsi(cs[:-1],2),1),last=p[-1][0],upd=int(time.time()),spark=[float('%.5g'%q) for q in cs[-30:]])
             try:
                 b4=bars4h(d4[s],meta[s]) if s in d4 else []
             except Exception: b4=[]
@@ -214,23 +215,35 @@ for i in range(0,len(syms),B):
     time.sleep(1.5)
     if (i//B)%10==0: print(i,len(out),flush=True)
 
-# Estocástico lento 2H e 4H (máximas e mínimas reais): uma consulta por ativo, só para os de maior interesse
-PRIO=lambda r: r[2] in ("Cripto","Futuros","Futuros e outros","Câmbio","ETFs") or r[0] in WL
-ns=0
+# Estocástico lento 2H e 4H (máximas e mínimas reais): uma consulta ao Yahoo por ativo.
+# Vale para cripto, futuros, câmbio, ETFs, watchlist e fixados, e também para as ações em zona extrema
+# (RSI(14) diário ou de 4H em sobrecompra/sobrevenda), das mais extremas para as menos.
+PRIO=lambda r: r[2] in ("Cripto","Futuros","Futuros e outros","Câmbio","ETFs") or r[0] in WL or r[0] in PIN
+extremo=lambda row: row["rsi"]>=70 or row["rsi"]<=30 or (row.get("rsi4") is not None and (row["rsi4"]>=70 or row["rsi4"]<=30))
+fila=[];ns=0
 for s,row in out.items():
-    r=meta[s]
-    if not PRIO(r): row["st2"]=None; row["st4"]=None; continue
-    p=prev.get(s,{})
+    r=meta[s]; p=prev.get(s,{})
+    if PRIO(r): fila.append((0,s))
+    elif extremo(row): fila.append((1-abs(row["rsi"]-50)/50,s))
+    else: row["st2"]=None; row["st4"]=None; continue
     if "st4" in p: row["st2"]=p.get("st2"); row["st4"]=p.get("st4")
+fila.sort()
+falhas=0
+for _,s in fila:
+    row=out[s]; r=meta[s]
     ch=chart60(s)
     if ch:
+        falhas=0
         try:
             for key,h in (("st2",2),("st4",4)):
                 H,L,C=ohlc_bars(ch,r,h); row[key]=stoch(C,H,L)
             ns+=1
         except Exception: pass
+    else:
+        falhas+=1
+        if falhas>=12: print("Yahoo recusando consultas seguidas: estocástico interrompido"); break
     time.sleep(0.6)
-print("estocástico OHLC calculado para",ns,"ativos")
+print("estocástico OHLC calculado para",ns,"de",len(fila),"ativos")
 res=[]
 for r in R0:
     res.append(out.get(r[1]) or prev.get(r[1]) or dict(sym=r[0],yahoo=r[1],group=r[2],ccy=r[3],wl=r[0] in WL,rsi=None,rsi2=None))
